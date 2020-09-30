@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "makespan-poc"
+version = "0.1.0"
+description = ""
+authors = ["Martin Matyasek <martin.matyasek@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+chart-studio = "*"
+cytoolz = "*"
+jupyter = "*"
+jupyterlab = "*"
+matplotlib = "*"
+numpy = "*"
+pandas = "*"
+plotly = "*"
+scikit-learn = "*"
+
+[build-system]
+requires = ["poetry-core>=1.0.0a5"]
+build-backend = "poetry.core.masonry.api"
