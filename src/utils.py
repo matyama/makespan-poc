@@ -1,9 +1,10 @@
 from datetime import date, datetime, timedelta
-from typing import Iterable, List, Optional, Tuple, Sequence
+from typing import Iterable, List, Optional, Tuple, Sequence, Set
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
+
 
 def gantt(R: int, p: Sequence[float], s: Sequence[int]) -> pd.DataFrame:
     alloc = {
