@@ -4,6 +4,7 @@ from heapq import heappop, heappush
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
+import pulp as pl
 
 from cytoolz.dicttoolz import assoc
 from cytoolz.itertoolz import first, second, unique
@@ -230,3 +231,43 @@ def bnb(R: int, p: Sequence[float], h: Heuristic, limit: Optional[timedelta] = N
         elapsed=datetime.now() - start,
     )
     return best.task_allocation, stats
+
+
+def milp(R: int, p: Sequence[float], solver: Optional[pl.LpSolver] = None) -> Tuple[List[int], float]:
+    if R < 1 or not p:
+        return [], 0.0
+    
+    n = len(p)
+    
+    problem = pl.LpProblem('Minimum_Makespan_Problem', pl.LpMinimize)
+
+    # objective: minimize makespan
+    m = pl.LpVariable('m', lowBound=0, upBound=sum(p))
+    problem += m
+
+    # x[i][j] = 1 iff task j is allocated to resource i
+    x = pl.LpVariable.dicts('x', (range(R), range(n)), cat=pl.LpBinary)
+
+    # makespan is the maximum completion time across resources
+    for i in range(R):
+        problem += m >= (p[j] * x[i][j] for j in range(n))
+
+    # task can be assigned once to exacly one resource
+    for j in range(n):
+        problem += sum(x[i][j] for i in range(R)) == 1
+
+    problem.solve()
+    
+    # check solution quality
+    if problem.status is not pl.LpSolutionOptimal:
+        return [], 0.0
+    
+    # extract solution
+    schedule = [0] * n
+    for j in range(n):
+        for i in range(R):
+            if x[i][j].value() == 1:
+                schedule[j] = i
+                continue
+                
+    return schedule, pl.value(problem.objective)
