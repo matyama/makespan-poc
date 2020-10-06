@@ -40,6 +40,7 @@ class Solution:
     rts: np.ndarray  # remaining task times
     value: float
     h_value: float
+    depth: int
 
     def __lt__(self, other: 'Solution') -> bool:
         return self.h_value < other.h_value
@@ -58,11 +59,11 @@ class Solution:
     def lpt(cls, R: int, p: List[Tuple[int, float]]) -> 'Solution':
         n = len(p)
         schedule, cts, value, _ = _lpt(R, p)
-        return cls(schedule=dict(enumerate(schedule)), cts=cts, rts=np.zeros(n, np.float64), value=value, h_value=value)
+        return cls(schedule=dict(enumerate(schedule)), cts=cts, rts=np.zeros(n, np.float64), value=value, h_value=value, depth=n)
 
     @classmethod
     def init(cls, R: int, p: Sequence[float], h_value: float) -> 'Solution':
-        return cls(schedule={}, cts=np.zeros(R, np.float64), rts=np.array(p), value=0.0, h_value=h_value)
+        return cls(schedule={}, cts=np.zeros(R, np.float64), rts=np.array(p), value=0.0, h_value=h_value, depth=0)
     
 
 def h1(R: int, rts: np.ndarray, cts: np.ndarray) -> float:
@@ -97,12 +98,22 @@ class Stats:
     R: int
     n: int
     makespan: float
+    max_open: Optional[int]
     expanded: int
+    pruned: int
     pruned_value: int
     pruned_h_value: int
     pruned_closed: int
     proved_optimal: bool
     elapsed: timedelta
+        
+    @property
+    def space_size(self) -> int:
+        return self.R ** self.n
+        
+    @property
+    def exhaustiveness_ratio(self) -> float:
+        return self.expanded / self.space_size if self.space_size > 0 else 1
         
     @property
     def pruned_total(self) -> int:
@@ -114,7 +125,9 @@ def bnb(R: int, p: Sequence[float], h: Heuristic, limit: Optional[timedelta] = N
     
     n = len(p)
 
+    max_open = None
     expanded = 0
+    pruned = 0
     pruned_value = 0
     pruned_h_value = 0
     pruned_closed = 0
@@ -130,7 +143,9 @@ def bnb(R: int, p: Sequence[float], h: Heuristic, limit: Optional[timedelta] = N
             R=R,
             n=n,
             makespan=0.0,
+            max_open=max_open,
             expanded=expanded,
+            pruned=pruned,
             pruned_value=pruned_value,
             pruned_h_value=0,
             pruned_closed=pruned_closed,
@@ -149,6 +164,7 @@ def bnb(R: int, p: Sequence[float], h: Heuristic, limit: Optional[timedelta] = N
 
     # Best-first search using f(N) = h(N)
     while queue:
+        max_open = max(max_open or 0, len(queue))
 
         # return current best if running for more than given time limit
         if limit is not None and (datetime.now() - start) > limit:
@@ -162,6 +178,7 @@ def bnb(R: int, p: Sequence[float], h: Heuristic, limit: Optional[timedelta] = N
             if node.value < best.value:  # found new minimum
                 best = node
         else:  # inner node -> extend partial solution
+            depth = node.depth + 1
 
             # heuristic: select the biggest task that restricts the space the most
             j, pt = next((j, pt) for j, pt in pts if j not in node.schedule)
@@ -187,19 +204,25 @@ def bnb(R: int, p: Sequence[float], h: Heuristic, limit: Optional[timedelta] = N
                         rts[j] -= pt
                         h_value = h(R, rts, cts)
                         if h_value < best.value:
-                            heappush(queue, Solution(schedule, cts, rts, value, h_value))
+                            heappush(queue, Solution(schedule, cts, rts, value, h_value, depth))
                         else:
+                            pruned += R ** (n - depth)
+                            # TODO: pruned_h_value += R ** (n - depth)
                             pruned_h_value += 1
                     else:
+                        pruned += R ** (n - depth)
                         pruned_closed += 1
                 else:
+                    pruned += R ** (n - depth)
                     pruned_value += 1
 
     stats = Stats(
         R=R,
         n=n,
         makespan=best.value,
+        max_open=max_open,
         expanded=expanded,
+        pruned=pruned,
         pruned_value=pruned_value,
         pruned_h_value=pruned_h_value,
         pruned_closed=pruned_closed,

@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 
+from alg import bnb
+
 
 def gantt(R: int, p: Sequence[float], s: Sequence[int]) -> pd.DataFrame:
     alloc = {
@@ -61,3 +63,8 @@ def random_instance(n: int, high: float) -> List[float]:
 def generate_random_instances(m: int, high: float = 10) -> Iterable[Tuple[int, List[float]]]:
     for n in range(m):
         yield n, random_instance(n, high)
+
+        
+def evaluate(f, R, p, h):
+    _, stats = bnb(R, p, h)
+    return f(stats)
