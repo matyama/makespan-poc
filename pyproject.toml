@@ -8,6 +8,7 @@ authors = ["Martin Matyasek <martin.matyasek@gmail.com>"]
 python = "^3.8"
 chart-studio = "*"
 cytoolz = "*"
+glpk = "*"
 jupyter = "*"
 jupyterlab = "*"
 matplotlib = "*"

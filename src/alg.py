@@ -240,23 +240,26 @@ def milp(R: int, p: Sequence[float], solver: Optional[pl.LpSolver] = None) -> Tu
     n = len(p)
     
     problem = pl.LpProblem('Minimum_Makespan_Problem', pl.LpMinimize)
+    
+    # solve LPT to get a tight upper bound on the solution
+    _, ub, _ = lpt(R, p)
 
     # objective: minimize makespan
-    m = pl.LpVariable('m', lowBound=0, upBound=sum(p))
-    problem += m
+    v = pl.LpVariable('v', lowBound=0, upBound=ub, cat=pl.LpContinuous)
+    problem += v
 
     # x[i][j] = 1 iff task j is allocated to resource i
     x = pl.LpVariable.dicts('x', (range(R), range(n)), cat=pl.LpBinary)
 
     # makespan is the maximum completion time across resources
     for i in range(R):
-        problem += m >= (p[j] * x[i][j] for j in range(n))
+        problem += v >= (p[j] * x[i][j] for j in range(n))
 
     # task can be assigned once to exacly one resource
     for j in range(n):
         problem += sum(x[i][j] for i in range(R)) == 1
 
-    problem.solve()
+    problem.solve(solver)
     
     # check solution quality
     if problem.status is not pl.LpSolutionOptimal:
