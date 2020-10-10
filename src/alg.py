@@ -274,3 +274,52 @@ def milp(R: int, p: Sequence[float], solver: Optional[pl.LpSolver] = None) -> Tu
                 continue
                 
     return schedule, pl.value(problem.objective)
+
+
+def sa(R, p, t0_ratio=1, cooling=0.1, max_iters=1000, seed=None):
+    if seed is not None:
+        np.random.seed(seed)
+    
+    def quality(x):
+        c = np.zeros(R, np.float64)
+        for j, i in enumerate(x):
+            c[i] += p[j]
+        return np.max(c)
+    
+    def tweak(x):
+        tweak_prob = 1. / len(x)
+        x = x.copy()
+        for j in range(len(x)):
+            if np.random.random() < tweak_prob:
+                x[j] = np.random.randint(R)
+        return x
+    
+    def temperature(i, best):
+        progress = i / max_iters
+        return (-t0_ratio * best) * math.exp(-progress * cooling) / math.log(0.5)
+    
+    n = len(p)
+    s = np.random.randint(R, size=n)
+    m = quality(s)
+    
+    schedule = s.copy()
+    makespan = quality(schedule)
+    
+    i = 0
+    while i < max_iters:
+        
+        c = tweak(s)
+        v = quality(c)
+        
+        t = temperature(i, makespan)
+        accept_prob = math.exp((m - v) / t)
+        
+        if v < m or np.random.random() < accept_prob:
+            s, m = c, v
+        
+        if m < makespan:
+            schedule, makespan = s.copy(), m
+        
+        i += 1
+            
+    return schedule, makespan
