@@ -1,3 +1,5 @@
+import math
+
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from heapq import heappop, heappush
@@ -276,7 +278,39 @@ def milp(R: int, p: Sequence[float], solver: Optional[pl.LpSolver] = None) -> Tu
     return schedule, pl.value(problem.objective)
 
 
-def sa(R, p, t0_ratio=1, cooling=0.1, max_iters=1000, seed=None):
+def vec_tweak(x, R):
+    """Global mutation operator"""
+    n = len(x)
+    tweak_prob = 1. / n
+    x = x.copy()
+    for j in range(n):
+        if np.random.random() < tweak_prob:
+            x[j] = np.random.randint(R)
+    return x
+
+
+def point_tweak(x, R):
+    """Not a global operator"""
+    x = x.copy()
+    point = np.random.randint(len(x))
+    x[point] = np.random.randint(R)
+    return x
+
+
+def swap_tweak(x, R):
+    """Not a global operator, also x should contain full range of R"""
+    n = len(x)
+    x = x.copy()
+    i = np.random.randint(n)
+    j = np.random.randint(n)
+    x[i], x[j] = x[j], x[i]
+    return x
+
+
+def sa(R, p, tweak=vec_tweak, t0_ratio=1, cooling=0.1, max_iters=1000, init_feasible=True, seed=None):
+    if R < 1 or not p:
+        return None, 0
+    
     if seed is not None:
         np.random.seed(seed)
     
@@ -286,20 +320,22 @@ def sa(R, p, t0_ratio=1, cooling=0.1, max_iters=1000, seed=None):
             c[i] += p[j]
         return np.max(c)
     
-    def tweak(x):
-        tweak_prob = 1. / len(x)
-        x = x.copy()
-        for j in range(len(x)):
-            if np.random.random() < tweak_prob:
-                x[j] = np.random.randint(R)
-        return x
-    
     def temperature(i, best):
         progress = i / max_iters
         return (-t0_ratio * best) * math.exp(-progress * cooling) / math.log(0.5)
     
+    def feasible(x, R):
+        """Checks that each resource is utilized (if n >= R)"""
+        return len(x) < R or len(np.unique(x)) == R
+    
+    def init(R, n):
+        x = np.random.randint(R, size=n)
+        while init_feasible and not feasible(x, R):
+            x = np.random.randint(R, size=n)
+        return x
+    
     n = len(p)
-    s = np.random.randint(R, size=n)
+    s = init(R, n)
     m = quality(s)
     
     schedule = s.copy()
@@ -308,7 +344,7 @@ def sa(R, p, t0_ratio=1, cooling=0.1, max_iters=1000, seed=None):
     i = 0
     while i < max_iters:
         
-        c = tweak(s)
+        c = tweak(s, R)
         v = quality(c)
         
         t = temperature(i, makespan)
