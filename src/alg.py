@@ -3,12 +3,15 @@ import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from heapq import heappop, heappush
+from itertools import chain
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import pulp as pl
 
+from cytoolz.curried import take
 from cytoolz.dicttoolz import assoc
+from cytoolz.functoolz import compose, pipe
 from cytoolz.itertoolz import first, second, unique
 
 
@@ -278,64 +281,79 @@ def milp(R: int, p: Sequence[float], solver: Optional[pl.LpSolver] = None) -> Tu
     return schedule, pl.value(problem.objective)
 
 
-def vec_tweak(x, R):
+def feasible(x: np.ndarray, R: int) -> bool:
+    """Checks that each resource is utilized (if n >= R)"""
+    return len(x) < R or len(np.unique(x)) == R
+
+
+def init(R: int, n: int, init_feasible: bool = True) -> np.ndarray:
+    x = np.random.randint(R, size=n)
+    while init_feasible and not feasible(x, R):
+        x = np.random.randint(R, size=n)
+    return x
+
+
+def vec_tweak(x: np.ndarray, R: int, copy: bool = True) -> np.ndarray:
     """Global mutation operator"""
     n = len(x)
     tweak_prob = 1. / n
-    x = x.copy()
+    if copy:
+        x = x.copy()
     for j in range(n):
         if np.random.random() < tweak_prob:
             x[j] = np.random.randint(R)
     return x
 
 
-def point_tweak(x, R):
+def point_tweak(x: np.ndarray, R: int, copy: bool = True) -> np.ndarray:
     """Not a global operator"""
-    x = x.copy()
+    if copy:
+        x = x.copy()
     point = np.random.randint(len(x))
     x[point] = np.random.randint(R)
     return x
 
 
-def swap_tweak(x, R):
+def swap_tweak(x: np.ndarray, R: int, copy: bool = True) -> np.ndarray:
     """Not a global operator, also x should contain full range of R"""
     n = len(x)
-    x = x.copy()
+    if copy:
+        x = x.copy()
     i = np.random.randint(n)
     j = np.random.randint(n)
     x[i], x[j] = x[j], x[i]
     return x
 
 
-def sa(R, p, tweak=vec_tweak, t0_ratio=1, cooling=0.1, max_iters=1000, init_feasible=True, seed=None):
+def anneal(
+    R: int, 
+    p: Sequence[float], 
+    tweak: Callable[[np.ndarray, int, bool], np.ndarray] = vec_tweak,
+    t0_ratio: float = 1, 
+    cooling: float = 0.1, 
+    max_iters: int = 1000, 
+    init_feasible: bool = True, 
+    seed: Optional[int] = None,
+) -> Tuple[np.ndarray, float]:
     if R < 1 or not p:
-        return None, 0
+        return [], float('nan')
     
     if seed is not None:
         np.random.seed(seed)
     
-    def quality(x):
+    def quality(x: np.ndarray) -> float:
         c = np.zeros(R, np.float64)
         for j, i in enumerate(x):
             c[i] += p[j]
+        # TODO: try to add m * sum(p) where m is the count of unused resources (if n >= R)
         return np.max(c)
     
-    def temperature(i, best):
+    def temperature(i: int, best: float) -> float:
         progress = i / max_iters
         return (-t0_ratio * best) * math.exp(-progress * cooling) / math.log(0.5)
     
-    def feasible(x, R):
-        """Checks that each resource is utilized (if n >= R)"""
-        return len(x) < R or len(np.unique(x)) == R
-    
-    def init(R, n):
-        x = np.random.randint(R, size=n)
-        while init_feasible and not feasible(x, R):
-            x = np.random.randint(R, size=n)
-        return x
-    
     n = len(p)
-    s = init(R, n)
+    s = init(R, n, init_feasible)
     m = quality(s)
     
     schedule = s.copy()
@@ -359,3 +377,129 @@ def sa(R, p, tweak=vec_tweak, t0_ratio=1, cooling=0.1, max_iters=1000, init_feas
         i += 1
             
     return schedule, makespan
+
+
+Crossover = Callable[[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]
+Mutation = Callable[[np.ndarray], None]
+
+
+def mutation(tweak: Callable[[np.ndarray, int, bool], np.ndarray], R: int) -> Mutation:
+    return lambda x: tweak(x, R, copy=False)
+
+
+def one_point_crossover(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    a, b = x.copy(), y.copy()
+    
+    c = np.random.randint(len(a))
+    if c:
+        for i in range(c - 1):
+            a[i], b[i] = b[i], a[i]
+    
+    return a, b
+
+
+def two_point_crossover(x: np.ndarray, y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    a, b, n = x.copy(), y.copy(), len(x)
+    
+    c = np.random.randint(n)
+    d = np.random.randint(n)
+    
+    if c > d:
+        c, d = d, c
+        
+    if c != d:
+        for i in range(c, d - 1):
+            a[i], b[i] = b[i], a[i]
+    
+    return a, b
+
+    
+def tournament_select(fitness: np.ndarray, size: int) -> int:
+    """Tournament selection"""
+    pop_size = len(fitness)
+    winner = np.random.randint(pop_size)
+    for _ in range(2, size):
+        i = np.random.randint(pop_size)
+        if fitness[i] < fitness[winner]:
+            winner = i
+    return winner
+
+
+def evolve(
+    R: int,
+    p: Sequence[float],
+    mate: Crossover,
+    mutate: Mutation,
+    pop_size: int = 100,
+    tournament_size: int = 3,
+    max_iters: int = 1000,
+    seed: Optional[int] = None,
+) -> Tuple[np.ndarray, float]:
+    if R < 1 or not p:
+        return [], float('nan')
+    
+    if seed is not None:
+        np.random.seed(seed)
+        
+    def fitness(x: np.ndarray) -> float:
+        """Compute fitness (makespan) of given individual (task allocation)"""
+        c = np.zeros(R, np.float64)
+        for j, i in enumerate(x):
+            c[i] += p[j]
+        # TODO: try to add m * sum(p) where m is the count of unused resources (if n >= R)
+        return np.max(c)
+    
+    def find_best(pop: Sequence[np.ndarray], fit: np.ndarray) -> Tuple[np.ndarray, float]:
+        """Find the fittest individual in population and its fitness"""
+        amin = fit.argmin()
+        return pop[amin], fit[amin]
+
+    def next_offsprings(pop: Sequence[np.ndarray], fit: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Pick two parents using tournament selection and produce two offsprings"""
+        # TODO: upgrade to memetic alg by running some optimization inside
+        parent1 = pop[tournament_select(fit, tournament_size)]
+        parent2 = pop[tournament_select(fit, tournament_size)]
+
+        child1, child2 = mate(parent1, parent2)
+        return mutate(child1), mutate(child2)
+    
+    def generate_offsprings(pop: Sequence[np.ndarray], fit: np.ndarray) -> Iterable[np.ndarray]:
+        """Generate infinite sequence of new individuals"""
+        while True:
+            yield from next_offsprings(pop, fit)
+            
+    assess_fitness = np.vectorize(fitness, signature='(n)->()')
+    next_generation = compose(list, take(pop_size), generate_offsprings)
+    
+    n = len(p)
+
+    # population of individuals (task allocations)
+    population = [init(R, n) for _ in range(pop_size)]
+    
+    # keep track of the overall best individual
+    best, best_fitness = None, None
+    
+    k = 0
+    while k < max_iters:
+        
+        # assess fitness
+        pop_fitness = assess_fitness(population)
+        
+        # find elite and update best individual
+        elite, elite_fitness = find_best(population, pop_fitness)
+        if best_fitness is None or elite_fitness < best_fitness:
+            best, best_fitness = elite, elite_fitness
+            
+        # create next generation
+        population = next_generation(population, pop_fitness)
+        
+        # elitism
+        population[0] = elite
+        
+        k += 1
+
+    elite, elite_fitness = find_best(population, pop_fitness)
+    if best_fitness is None or elite_fitness < best_fitness:
+        best, best_fitness = elite, elite_fitness
+    
+    return best, best_fitness
