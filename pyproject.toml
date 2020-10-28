@@ -31,12 +31,20 @@ mypy = "*"
 pandas-vet = "*"
 pre-commit = "*"
 pytest = "*"
-pytest-cov = "*"
+pytest-cov = {version = "*", extras = ["toml"]}
 
 [tool.black]
 line-length = 79
 target-version = ['py38']
 skip-string-normalization = 'true'
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "raise AssertionError", "raise NotImplementedError", "if 0:", "if __name__ == .__main__.:"]
+ignore_errors = true
+skip_covered = true
 
 [tool.flakehell]
 exclude = [".ipynb_checkpoints", "**/.ipynb_checkpoints", "notebooks"]
@@ -57,6 +65,10 @@ multi_line_output = 3
 line_length = 79
 include_trailing_comma = true
 skip_glob = [".ipynb_checkpoints", "**/.ipynb_checkpoints"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --verbose --doctest-modules --cov=src"
+testpaths = ["src"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0a5"]

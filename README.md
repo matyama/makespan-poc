@@ -36,32 +36,26 @@ It is advised to use following make targets during development.
 ```bash
 make fmt
 ```
-Runs [black](https://black.readthedocs.io/en/stable/) formatting tool on source code. Again, find configuration in `pyproject.toml`.
+1. Reformats imports using [isort](https://pycqa.github.io/isort/).
+2. Runs [black](https://black.readthedocs.io/en/stable/) formatting tool on source code.
+
+Again, find configuration for both tools in `pyproject.toml`.
 
 ```bash
 make lint
 ```
-This command runs bunch of [flakehell](https://flakehell.readthedocs.io/) checks against code in `src/`.
-One can find configuration and tweak plugins in `pyproject.toml`.
+This command runs:
+1. Bunch of [flakehell](https://flakehell.readthedocs.io/) checks against code in `src/`. One can find config and tweak plugins in `pyproject.toml`.
+2. Runs [mypy](https://mypy.readthedocs.io/en/latest/) static type check on `src/`. Configuration is in default `mypy.ini`.
 
 ```bash
-make type-check
+make tests
 ```
-Runs [mypy](https://mypy.readthedocs.io/en/latest/) static type check on `src/`. Configuration is in default `mypy.ini`.
+Runs tests with doctests enabled and displays code coverage. Configuration can be tweaked in relevant sections of `pyproject.toml`.
 
-Both `lint` and `type-check` can be run with
+All lints and tests are also available via single command:
 ```bash
 make check
-```
-
-```bash
-make test
-```
-Runs tests with doctests enabled and displays code coverage. Configuration can be tweaked in `.coveragerc`.
-
-All checks and tests are available via
-```bash
-make release-check
 ```
 
 Finally, initial setup installs pre-commit hooks (see `.pre-commit-config.yaml`). One can run these hooks as follows:

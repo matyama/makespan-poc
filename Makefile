@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check lint tests type-check
+.PHONY: check fmt lint tests
 
 setup:
 	poetry env use python3.8
@@ -6,25 +6,14 @@ setup:
 	pre-commit install
 
 fmt:
-	@echo ">>> Formatting sources using black"
+	isort .
 	black .
 
-isort:
-	@echo ">>> Formatting imports using isort"
-	isort .
-
 lint:
-	@echo ">>> Linting Python sources with flakehell"
-	flakehell lint || ( echo ">>> Linting failed"; exit 1; )
-
-type-check:
-	@echo ">>> Checking consistency of type annotations with mypy"
-	MYPYPATH=src mypy . || ( echo ">>> Type check failed"; exit 1; )
-
-check: lint type-check
+	flakehell lint
+	MYPYPATH=src mypy .
 
 tests:
-	@echo ">>> Running tests with coverage"
-	PYTHONPATH=src pytest --cov=src --verbose --doctest-modules .
+	PYTHONPATH=src pytest
 
-release-check: check tests
+check: lint tests
