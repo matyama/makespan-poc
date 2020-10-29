@@ -12,20 +12,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.8
-    - name: Set up Poetry
-      uses: abatilo/actions-poetry@v2.0.0
-      with:
-        poetry-version: 1.0
-    - name: Install dependencies
-      run: |
-        sudo apt install -y make libglpk-dev glpk-utils glpk-doc
-        poetry install
-    - name: Run lint and type checks
-      run: make lint
-    - name: Run tests
-      run: make tests
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+      - name: Set up Poetry
+        uses: abatilo/actions-poetry@v2.1.0
+        with:
+          poetry-version: 1.0
+      - name: Install dependencies
+        run: |
+          sudo apt install -y make libglpk-dev glpk-utils glpk-doc
+          poetry install
+      - name: Run lint and type checks
+        run: make lint
+      - name: Run tests
+        run: make tests
