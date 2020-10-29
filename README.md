@@ -1,3 +1,5 @@
+![makespan-poc](https://github.com/matyama/makespan-poc/workflows/makespan-poc/badge.svg)
+
 # Makespan PoC
 Prototype impementations for [makespan](https://github.com/matyama/makespan) project.
 
