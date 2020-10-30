@@ -7,7 +7,6 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-chart-studio = "*"
 cytoolz = "*"
 glpk = "*"
 jupyter = "*"
@@ -15,7 +14,6 @@ jupyterlab = "*"
 matplotlib = "*"
 numpy = "*"
 pandas = "*"
-plotly = "*"
 pulp = "*"
 
 [tool.poetry.dev-dependencies]
