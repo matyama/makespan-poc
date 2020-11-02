@@ -18,7 +18,7 @@ import pulp as pl
 from cytoolz.curried import take
 from cytoolz.dicttoolz import assoc
 from cytoolz.functoolz import compose
-from cytoolz.itertoolz import first, second, unique
+from cytoolz.itertoolz import first, second, topk, unique
 
 
 def lpt(R: int, p: Sequence[float]) -> Tuple[List[int], float, float]:
@@ -528,7 +528,7 @@ def evolve(
     n = len(p)
     M = sum(p) if penalize and n >= R else 0
 
-    def fitness(x: np.ndarray) -> float:
+    def fitness(x: np.ndarray, penalize: bool) -> float:
         """Compute fitness (makespan) of given individual (task allocation)"""
 
         c = np.zeros(R, np.float64)
@@ -539,13 +539,7 @@ def evolve(
 
         # add penalty m * sum(p) where m is the count of unused resources
         penalty = (R - len(res)) * M
-        return cast(float, np.max(c)) + penalty
-
-    def makespan(x: np.ndarray) -> float:
-        c = np.zeros(R, np.float64)
-        for j, i in enumerate(x):
-            c[i] += p[j]
-        return cast(float, np.max(c))
+        return cast(float, np.max(c)) + (penalty if penalize else 0)
 
     def find_best(
         pop: Sequence[np.ndarray], fit: np.ndarray
@@ -574,7 +568,11 @@ def evolve(
         while True:
             yield from next_offsprings(pop, fit)
 
-    assess_fitness = np.vectorize(fitness, signature='(n)->()')
+    assess_fitness = np.vectorize(
+        fitness,
+        signature='(n)->()',
+        excluded=['penalize'],
+    )
     next_generation = compose(list, take(pop_size), generate_offsprings)
 
     # population of individuals (task allocations)
@@ -587,7 +585,7 @@ def evolve(
     while k < max_iters:
 
         # assess fitness
-        pop_fitness = assess_fitness(population)
+        pop_fitness = assess_fitness(population, penalize=penalize)
 
         # find elite and update best individual
         elite, elite_fitness = find_best(population, pop_fitness)
@@ -603,4 +601,89 @@ def evolve(
         k += 1
 
     # return makespan instead of fitness which might be penalized
-    return best, makespan(best)
+    return best, fitness(best, penalize=False)
+
+
+def evo_strat(
+    R: int,
+    p: Sequence[float],
+    num_parents: int = 10,
+    pop_size: int = 100,
+    elitism: bool = False,
+    tweak: Callable[[np.ndarray, int], np.ndarray] = vec_tweak,
+    max_iters: int = 1000,
+    penalize: bool = True,
+    seed: Optional[int] = None,
+) -> Tuple[np.ndarray, float]:
+    """
+    Evolutionary Strategy:
+     - (num_parents,pop_size) ES if elitism is disabled (default)
+     - (num_parents+pop_size) ES if elitism is enabled
+    """
+    assert num_parents <= pop_size and pop_size % num_parents == 0
+
+    if R < 1 or not p:
+        return [], float('nan')
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    n = len(p)
+    M = sum(p) if penalize and n >= R else 0
+
+    def neg_fit(fit: Tuple[int, float]) -> float:
+        _, f = fit
+        return -f
+
+    def fitness(x: np.ndarray, penalize: bool) -> float:
+        c = np.zeros(R, np.float64)
+        res = set()
+        for j, i in enumerate(x):
+            c[i] += p[j]
+            res.add(i)  # noqa: PD005
+        # add penalty m * sum(p) where m is the count of unused resources
+        penalty = (R - len(res)) * M
+        return cast(float, np.max(c)) + (penalty if penalize else 0)
+
+    assess_fitness = np.vectorize(
+        fitness,
+        signature='(n)->()',
+        excluded=['penalize'],
+    )
+
+    # population of individuals (task allocations)
+    population = [init(R, n) for _ in range(pop_size)]
+
+    # keep track of the overall best individual
+    best, best_fitness = None, None
+
+    k = 0
+    while k < max_iters:
+
+        # assess fitness
+        pop_fitness = assess_fitness(population, penalize=penalize)
+
+        # find `num_parents` fittest individuals
+        parents = topk(num_parents, enumerate(pop_fitness), key=neg_fit)
+
+        # keep track of the best individual
+        elite, elite_fitness = first(parents)
+        if best_fitness is None or elite_fitness < best_fitness:
+            best, best_fitness = population[elite], elite_fitness
+
+        # produce new population by mutating the parents (equal proportions)
+        parents = [population[parent] for parent, _ in parents]
+        population = [
+            tweak(parent, R)
+            for _ in range(pop_size // num_parents)
+            for parent in parents
+        ]
+
+        # promote parents in (pop_size + num_parents) ES
+        if elitism:
+            population = parents + population
+
+        k += 1
+
+    # return makespan instead of fitness which might be penalized
+    return best, fitness(best, penalize=False)
