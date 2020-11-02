@@ -401,6 +401,7 @@ def anneal(
     cooling: float = 0.1,
     max_iters: int = 1000,
     init_feasible: bool = True,
+    penalize: bool = False,
     seed: Optional[int] = None,
 ) -> Tuple[np.ndarray, float]:
     if R < 1 or not p:
@@ -409,13 +410,18 @@ def anneal(
     if seed is not None:
         np.random.seed(seed)
 
-    def quality(x: np.ndarray) -> float:
+    n = len(p)
+    M = sum(p) if penalize and n >= R else 0
+
+    def quality(x: np.ndarray, penalize: bool = True) -> float:
         c = np.zeros(R, np.float64)
+        res = set()
         for j, i in enumerate(x):
             c[i] += p[j]
-        # TODO: try to add m * sum(p) where m is the count of unused resources
-        #  - if n >= R
-        return cast(float, np.max(c))
+            res.add(i)
+        # add penalty m * sum(p) where m is the count of unused resources
+        penalty = (R - len(res)) * M
+        return cast(float, np.max(c)) + (penalty if penalize else 0)
 
     def temperature(i: int, best: float) -> float:
         progress = i / max_iters
@@ -423,7 +429,6 @@ def anneal(
             (-t0_ratio * best) * math.exp(-progress * cooling) / math.log(0.5)
         )
 
-    n = len(p)
     s = init(R, n, init_feasible)
     m = quality(s)
 
@@ -447,7 +452,8 @@ def anneal(
 
         i += 1
 
-    return schedule, makespan
+    # return makespan instead of quality which might be penalized
+    return schedule, quality(schedule, penalize=False)
 
 
 Crossover = Callable[[np.ndarray, np.ndarray], Tuple[np.ndarray, np.ndarray]]
@@ -510,6 +516,7 @@ def evolve(
     pop_size: int = 100,
     tournament_size: int = 3,
     max_iters: int = 1000,
+    penalize: bool = True,
     seed: Optional[int] = None,
 ) -> Tuple[np.ndarray, float]:
     if R < 1 or not p:
@@ -518,13 +525,26 @@ def evolve(
     if seed is not None:
         np.random.seed(seed)
 
+    n = len(p)
+    M = sum(p) if penalize and n >= R else 0
+
     def fitness(x: np.ndarray) -> float:
         """Compute fitness (makespan) of given individual (task allocation)"""
+
+        c = np.zeros(R, np.float64)
+        res = set()
+        for j, i in enumerate(x):
+            c[i] += p[j]
+            res.add(i)
+
+        # add penalty m * sum(p) where m is the count of unused resources
+        penalty = (R - len(res)) * M
+        return cast(float, np.max(c)) + penalty
+
+    def makespan(x: np.ndarray) -> float:
         c = np.zeros(R, np.float64)
         for j, i in enumerate(x):
             c[i] += p[j]
-        # TODO: try to add m * sum(p) where m is the count of unused resources
-        #  - if n >= R
         return cast(float, np.max(c))
 
     def find_best(
@@ -557,8 +577,6 @@ def evolve(
     assess_fitness = np.vectorize(fitness, signature='(n)->()')
     next_generation = compose(list, take(pop_size), generate_offsprings)
 
-    n = len(p)
-
     # population of individuals (task allocations)
     population = [init(R, n) for _ in range(pop_size)]
 
@@ -584,8 +602,5 @@ def evolve(
 
         k += 1
 
-    elite, elite_fitness = find_best(population, pop_fitness)
-    if best_fitness is None or elite_fitness < best_fitness:
-        best, best_fitness = elite, elite_fitness
-
-    return best, best_fitness
+    # return makespan instead of fitness which might be penalized
+    return best, makespan(best)
