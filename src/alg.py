@@ -418,7 +418,7 @@ def anneal(
         res = set()
         for j, i in enumerate(x):
             c[i] += p[j]
-            res.add(i)
+            res.add(i)  # noqa: PD005
         # add penalty m * sum(p) where m is the count of unused resources
         penalty = (R - len(res)) * M
         return cast(float, np.max(c)) + (penalty if penalize else 0)
@@ -535,7 +535,7 @@ def evolve(
         res = set()
         for j, i in enumerate(x):
             c[i] += p[j]
-            res.add(i)
+            res.add(i)  # noqa: PD005
 
         # add penalty m * sum(p) where m is the count of unused resources
         penalty = (R - len(res)) * M
