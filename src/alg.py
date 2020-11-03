@@ -466,34 +466,52 @@ def mutation(
     return cast(Mutation, lambda x: tweak(x, R, False))
 
 
+def npoint_crossover(
+    x: np.ndarray,
+    y: np.ndarray,
+    n: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    a, b = x.copy(), y.copy()
+    if n < 1:
+        return a, b
+
+    c = np.random.randint(len(x), size=n)
+    c.sort()
+
+    if n == 1:
+        c = first(c)
+        if c:
+            for i in range(c - 1):
+                a[i], b[i] = b[i], a[i]
+    else:
+        for i, j in zip(c, c[1:]):
+            if i != j:
+                for k in range(i, j - 1):
+                    a[k], b[k] = b[k], a[k]
+
+    return a, b
+
+
 def one_point_crossover(
     x: np.ndarray, y: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
-    a, b = x.copy(), y.copy()
-
-    c = np.random.randint(len(a))
-    if c:
-        for i in range(c - 1):
-            a[i], b[i] = b[i], a[i]
-
-    return a, b
+    return npoint_crossover(x, y, n=1)
 
 
 def two_point_crossover(
     x: np.ndarray, y: np.ndarray
 ) -> Tuple[np.ndarray, np.ndarray]:
+    return npoint_crossover(x, y, n=2)
+
+
+def uniform_crossover(
+    x: np.ndarray, y: np.ndarray
+) -> Tuple[np.ndarray, np.ndarray]:
     a, b, n = x.copy(), y.copy(), len(x)
-
-    c = np.random.randint(n)
-    d = np.random.randint(n)
-
-    if c > d:
-        c, d = d, c
-
-    if c != d:
-        for i in range(c, d - 1):
+    swap_prob = 1.0 / n
+    for i in range(n):
+        if np.random.random() < swap_prob:
             a[i], b[i] = b[i], a[i]
-
     return a, b
 
 
@@ -517,6 +535,7 @@ def evolve(
     tournament_size: int = 3,
     max_iters: int = 1000,
     penalize: bool = True,
+    lpt_seed: bool = False,
     seed: Optional[int] = None,
 ) -> Tuple[np.ndarray, float]:
     if R < 1 or not p:
@@ -559,6 +578,7 @@ def evolve(
         parent2 = pop[tournament_select(fit, tournament_size)]
 
         child1, child2 = mate(parent1, parent2)
+
         return mutate(child1), mutate(child2)
 
     def generate_offsprings(
@@ -577,6 +597,11 @@ def evolve(
 
     # population of individuals (task allocations)
     population = [init(R, n) for _ in range(pop_size)]
+
+    # seed initial population with LPT solution
+    if lpt_seed:
+        lpt_solution, _, _ = lpt(R, p)
+        population[0] = np.array(lpt_solution)
 
     # keep track of the overall best individual
     best, best_fitness = None, None
@@ -613,6 +638,7 @@ def evo_strat(
     tweak: Callable[[np.ndarray, int], np.ndarray] = vec_tweak,
     max_iters: int = 1000,
     penalize: bool = True,
+    lpt_seed: bool = False,
     seed: Optional[int] = None,
 ) -> Tuple[np.ndarray, float]:
     """
@@ -653,6 +679,11 @@ def evo_strat(
 
     # population of individuals (task allocations)
     population = [init(R, n) for _ in range(pop_size)]
+
+    # seed initial population with LPT solution
+    if lpt_seed:
+        lpt_solution, _, _ = lpt(R, p)
+        population[0] = np.array(lpt_solution)
 
     # keep track of the overall best individual
     best, best_fitness = None, None
