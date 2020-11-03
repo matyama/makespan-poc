@@ -1,9 +1,24 @@
+import json
+import os
+import pathlib
 from typing import Callable, Iterable, List, Sequence, Tuple, TypeVar
 
 import numpy as np
 import pandas as pd
 
 from alg import Heuristic, Stats, bnb
+
+_root_path = pathlib.Path(__file__).parent.parent.absolute()
+_data_path = os.path.join(_root_path, 'data')
+
+
+def load_sample(n: int) -> List[float]:
+    file_path = os.path.join(_data_path, f'sample{n}.json')
+    with open(file_path, 'rb') as file:
+        return json.load(file)  # type: ignore
+
+
+SAMPLE_INSTANCE: Sequence[float] = load_sample(1)
 
 
 def gantt(R: int, p: Sequence[float], s: Sequence[int]) -> pd.DataFrame:
