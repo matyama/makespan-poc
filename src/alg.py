@@ -774,7 +774,6 @@ def grasp(
             feasible = sorted(
                 ((i, j) for i, j in components if j not in schedule),
                 key=processing_time,
-                reverse=True,
             )
 
             if not feasible:
