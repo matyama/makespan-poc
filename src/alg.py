@@ -749,8 +749,15 @@ def grasp(
     seed: Optional[int] = None,
 ) -> Tuple[np.ndarray, float]:
     """
+    Greedy Randomized Adaptive Search Procedure (GRASP)
+
+    :param R: # resources
+    :param p: task processing times
     :param cc_ratio: % of best feasible candidate components to pick from
+    :param tweak: mutation operator used internally in Hill Climbing procedure
+    :param max_iters: iteration limit (# generated candidate solutions)
     :param hc_iters: # iterations to hill-climb candidate solution each epoch
+    :param seed: optional seed for random number generator
     """
     if R < 1 or not p:
         return np.array([]), float('nan')
