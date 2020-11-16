@@ -718,3 +718,95 @@ def evo_strat(
 
     # return makespan instead of fitness which might be penalized
     return best, fitness(best, penalize=False)
+
+
+def hill_climb(
+    quality: Callable[[np.ndarray], float],
+    tweak: Callable[[np.ndarray], np.ndarray],
+    max_iters: int,
+    schedule: np.ndarray,
+) -> Tuple[np.ndarray, float]:
+    makespan = quality(schedule)
+
+    for _ in range(max_iters):
+
+        candidate = tweak(schedule)
+        candidate_makespan = quality(candidate)
+
+        if candidate_makespan < makespan:
+            schedule, makespan = candidate.copy(), candidate_makespan
+
+    return schedule, makespan
+
+
+def grasp(
+    R: int,
+    p: Sequence[float],
+    cc_ratio: float = 0.5,
+    tweak: Callable[[np.ndarray, int], np.ndarray] = vec_tweak,
+    max_iters: int = 1000,
+    hc_iters: int = 10,
+    seed: Optional[int] = None,
+) -> Tuple[np.ndarray, float]:
+    """
+    :param cc_ratio: % of best feasible candidate components to pick from
+    :param hc_iters: # iterations to hill-climb candidate solution each epoch
+    """
+    if R < 1 or not p:
+        return np.array([]), float('nan')
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    n = len(p)
+    components = frozenset((i, j) for i in range(R) for j in range(n))
+
+    def processing_time(assignment: Tuple[int, int]) -> float:
+        _, j = assignment
+        return p[j]
+
+    def next_candidate() -> np.ndarray:
+        # (partial) schedule is represented as a mapping `{task: resource}`
+        schedule: Dict[int, int] = {}
+        # repeat until a complete feasible schedule is found
+        while len(schedule) < n:
+            # if i <- j exists =>  all (*, j) are infeasible
+            feasible = sorted(
+                ((i, j) for i, j in components if j not in schedule),
+                key=processing_time,
+                reverse=True,
+            )
+
+            if not feasible:
+                schedule = {}
+
+            # components sorted by `p[j']` desc => pick random one from k best
+            kbest = int(max(cc_ratio * len(feasible), 1))
+            i, j = feasible[np.random.randint(kbest)]
+            schedule[j] = i
+
+        candidate = np.zeros(n, np.uint16)
+        for j, i in schedule.items():
+            candidate[j] = i
+        return candidate
+
+    def quality(x: np.ndarray) -> float:
+        c = np.zeros(R, np.float64)
+        for j, i in enumerate(x):
+            c[i] += p[j]
+        return cast(float, np.max(c))
+
+    def hc_tweak(x: np.ndarray) -> np.ndarray:
+        return tweak(x, R)
+
+    best: Optional[np.ndarray] = None
+    best_makespan = None
+
+    for _ in range(max_iters):
+        schedule = next_candidate()
+        schedule, makespan = hill_climb(quality, hc_tweak, hc_iters, schedule)
+        if best_makespan is None or makespan < best_makespan:
+            best, best_makespan = schedule.copy(), makespan
+
+    assert best is not None and best_makespan is not None
+    return best, best_makespan
