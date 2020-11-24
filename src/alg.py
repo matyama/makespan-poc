@@ -721,17 +721,17 @@ def evo_strat(
 
 
 def hill_climb(
-    quality: Callable[[np.ndarray], float],
+    cost: Callable[[np.ndarray], float],
     tweak: Callable[[np.ndarray], np.ndarray],
     max_iters: int,
     schedule: np.ndarray,
 ) -> Tuple[np.ndarray, float]:
-    makespan = quality(schedule)
+    makespan = cost(schedule)
 
     for _ in range(max_iters):
 
         candidate = tweak(schedule)
-        candidate_makespan = quality(candidate)
+        candidate_makespan = cost(candidate)
 
         if candidate_makespan < makespan:
             schedule, makespan = candidate.copy(), candidate_makespan
@@ -766,7 +766,7 @@ def grasp(
         np.random.seed(seed)
 
     n = len(p)
-    components = frozenset((i, j) for i in range(R) for j in range(n))
+    components = [(i, j) for i in range(R) for j in range(n)]
 
     def processing_time(assignment: Tuple[int, int]) -> float:
         _, j = assignment
@@ -796,7 +796,7 @@ def grasp(
             candidate[j] = i
         return candidate
 
-    def quality(x: np.ndarray) -> float:
+    def cost(x: np.ndarray) -> float:
         c = np.zeros(R, np.float64)
         for j, i in enumerate(x):
             c[i] += p[j]
@@ -810,9 +810,102 @@ def grasp(
 
     for _ in range(max_iters):
         schedule = next_candidate()
-        schedule, makespan = hill_climb(quality, hc_tweak, hc_iters, schedule)
+        schedule, makespan = hill_climb(cost, hc_tweak, hc_iters, schedule)
         if best_makespan is None or makespan < best_makespan:
             best, best_makespan = schedule.copy(), makespan
 
     assert best is not None and best_makespan is not None
+    return best, best_makespan
+
+
+def gls(
+    R: int,
+    p: Sequence[float],
+    beta: float = 0.5,
+    tweak: Callable[[np.ndarray, int], np.ndarray] = vec_tweak,
+    max_iters: int = 1000,
+    hc_iters: int = 10,
+    seed: Optional[int] = None,
+) -> Tuple[np.ndarray, float]:
+    """
+    Guided Local Search with Random Updates (GLS)
+
+    :param R: # resources
+    :param p: task processing times
+    :param beta: degree to which novelty figures in final quality computation
+    :param tweak: mutation operator used internally in Hill Climbing procedure
+    :param max_iters: iteration limit (# generated candidate solutions)
+    :param hc_iters: # iterations to hill-climb candidate solution each epoch
+    :param seed: optional seed for random number generator
+    """
+    if R < 1 or not p:
+        return np.array([]), float('nan')
+
+    if seed is not None:
+        np.random.seed(seed)
+
+    n = len(p)
+    components = [(i, j) for i in range(R) for j in range(n)]
+    index = {c: i for i, c in enumerate(components)}
+    penalties = [0] * len(components)
+
+    def penalizability(component: Tuple[int, int]) -> float:
+        i = index[component]
+        _, j = components[i]
+        return p[j] / (1 + penalties[i])
+
+    def penalizable(component: Tuple[int, int], x: np.ndarray) -> bool:
+        return all(
+            penalizability(component) >= penalizability(other)
+            for other in enumerate(schedule)
+            if other != component
+        )
+
+    def cost(x: np.ndarray) -> float:
+        c = np.zeros(R, np.float64)
+        for j, i in enumerate(x):
+            c[i] += p[j]
+        return cast(float, np.max(c))
+
+    def adj_cost(x: np.ndarray, c: Optional[float] = None) -> float:
+        value = c if c is not None else cost(x)
+        penalty = sum(
+            penalties[k] for k, (i, j) in enumerate(components) if x[j] == i
+        )
+        return value + beta * penalty
+
+    schedule = init(R, n)
+    makespan = cost(schedule)
+    adj_makespan = adj_cost(schedule, makespan)
+
+    best, best_makespan = schedule.copy(), makespan
+
+    for _ in range(max_iters):
+
+        # Hill Climbing
+        for _ in range(hc_iters):
+            candidate = tweak(schedule, R)
+            candidate_makespan = cost(candidate)
+            candidate_adj_makespan = adj_cost(candidate, candidate_makespan)
+
+            # Track the overall best in terms of quality (makespan)
+            if candidate_adj_makespan < adj_makespan:
+                schedule, makespan = candidate, candidate_makespan
+                adj_makespan = candidate_adj_makespan
+
+            # Climb based on adjusted quality
+            if candidate_makespan < makespan:
+                schedule, makespan = candidate.copy(), candidate_makespan
+
+        # Find the most penalizable components
+        penalizable_components = unique(
+            component
+            for component in enumerate(schedule)
+            if penalizable(component, schedule)
+        )
+
+        # Penalize components
+        for component in penalizable_components:
+            penalties[index[component]] += 1
+
     return best, best_makespan
