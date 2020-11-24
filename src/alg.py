@@ -856,9 +856,9 @@ def gls(
 
     def penalizable(component: Tuple[int, int], x: np.ndarray) -> bool:
         return all(
-            penalizability(component) >= penalizability(other)
-            for other in enumerate(schedule)
-            if other != component
+            penalizability(component) >= penalizability((i, j))
+            for j, i in enumerate(x)
+            if (i, j) != component
         )
 
     def cost(x: np.ndarray) -> float:
@@ -899,9 +899,9 @@ def gls(
 
         # Find the most penalizable components
         penalizable_components = unique(
-            component
-            for component in enumerate(schedule)
-            if penalizable(component, schedule)
+            (i, j)
+            for j, i in enumerate(schedule)
+            if penalizable((i, j), schedule)
         )
 
         # Penalize components
